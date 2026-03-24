@@ -1,19 +1,25 @@
 from flask import Flask, jsonify, request, send_from_directory, render_template_string
-import json
+from datetime import datetime, timezone, timedelta
+import cloudinary
+import cloudinary.uploader
 import os
+from supabase import create_client
 
 app = Flask(__name__)
 
-MEDIA_FOLDER = 'media'
-PLAYLIST_FILE = 'playlists.json'
-DEVICES_FILE = 'devices.json'
+SUPABASE_URL = os.environ.get("SUPABASE_URL")
+SUPABASE_KEY = os.environ.get("SUPABASE_KEY")
+CLOUDINARY_CLOUD = os.environ.get("CLOUDINARY_CLOUD")
+CLOUDINARY_API_KEY = os.environ.get("CLOUDINARY_API_KEY")
+CLOUDINARY_API_SECRET = os.environ.get("CLOUDINARY_API_SECRET")
 
-os.makedirs(MEDIA_FOLDER, exist_ok=True)
+supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
 
-for f in [PLAYLIST_FILE, DEVICES_FILE]:
-    if not os.path.exists(f):
-        with open(f, 'w') as file:
-            json.dump({}, file)
+cloudinary.config(
+    cloud_name=CLOUDINARY_CLOUD,
+    api_key=CLOUDINARY_API_KEY,
+    api_secret=CLOUDINARY_API_SECRET
+)
 
 DASHBOARD_HTML = '''
 <!DOCTYPE html>
@@ -30,7 +36,8 @@ DASHBOARD_HTML = '''
         table { width: 100%; border-collapse: collapse; margin-top: 10px; }
         th, td { padding: 10px; text-align: left; border-bottom: 1px solid #ddd; }
         th { background: #eee; }
-        .delete { background: #e74c3c; }
+        .online { color: green; font-weight: bold; }
+        .offline { color: red; font-weight: bold; }
     </style>
 </head>
 <body>
@@ -54,12 +61,21 @@ DASHBOARD_HTML = '''
 
     <section>
         <h2>Media Library</h2>
+        <button onclick="loadMedia()">Refresh</button>
         <div id="mediaList">Loading...</div>
     </section>
 
     <section>
         <h2>Devices</h2>
+        <button onclick="loadDevices()">Refresh</button>
         <div id="deviceList">Loading...</div>
+    </section>
+
+    <section>
+        <h2>Preview Device Playlist</h2>
+        <input id="previewDeviceId" placeholder="Device ID (e.g. device_001)" />
+        <button onclick="previewPlaylist()">Preview</button>
+        <div id="previewArea"></div>
     </section>
 
     <script>
@@ -94,8 +110,8 @@ DASHBOARD_HTML = '''
             const data = await r.json();
             const div = document.getElementById('mediaList');
             if (data.length === 0) { div.innerHTML = 'No media uploaded yet.'; return; }
-            div.innerHTML = '<table><tr><th>Filename</th><th>Category</th><th>Duration</th></tr>' +
-                data.map(m => `<tr><td>${m.filename}</td><td>${m.category}</td><td>${m.duration}s</td></tr>`).join('') +
+            div.innerHTML = '<table><tr><th>Filename</th><th>Category</th><th>Duration</th><th>Preview</th></tr>' +
+                data.map(m => `<tr><td>${m.filename}</td><td>${m.category}</td><td>${m.duration}s</td><td><a href="${m.url}" target="_blank">View</a></td></tr>`).join('') +
                 '</table>';
         }
 
@@ -103,15 +119,37 @@ DASHBOARD_HTML = '''
             const r = await fetch('/devices');
             const data = await r.json();
             const div = document.getElementById('deviceList');
-            const keys = Object.keys(data);
-            if (keys.length === 0) { div.innerHTML = 'No devices registered yet.'; return; }
-            div.innerHTML = '<table><tr><th>ID</th><th>Name</th><th>Category</th></tr>' +
-                keys.map(k => `<tr><td>${k}</td><td>${data[k].name}</td><td>${data[k].category}</td></tr>`).join('') +
+            if (data.length === 0) { div.innerHTML = 'No devices registered yet.'; return; }
+            div.innerHTML = '<table><tr><th>ID</th><th>Name</th><th>Category</th><th>Status</th><th>Last Seen</th></tr>' +
+                data.map(d => {
+                    const status = d.online ? '<span class="online">🟢 Online</span>' : '<span class="offline">🔴 Offline</span>';
+                    const lastSeen = d.last_seen ? new Date(d.last_seen).toLocaleString() : 'Never';
+                    return `<tr><td>${d.id}</td><td>${d.name}</td><td>${d.category}</td><td>${status}</td><td>${lastSeen}</td></tr>`;
+                }).join('') +
                 '</table>';
+        }
+
+        async function previewPlaylist() {
+            const deviceId = document.getElementById('previewDeviceId').value;
+            const r = await fetch(`/playlist/${deviceId}`);
+            const playlist = await r.json();
+            const div = document.getElementById('previewArea');
+            if (playlist.length === 0) { div.innerHTML = 'No media for this device.'; return; }
+            let index = 0;
+            div.innerHTML = `<div style="margin-top:10px;">
+                <img id="previewImg" src="${playlist[0].url}" style="max-width:100%;max-height:400px;border-radius:8px;" />
+                <p id="previewLabel" style="text-align:center;">${playlist[0].filename} — ${playlist[0].duration}s</p>
+            </div>`;
+            setInterval(() => {
+                index = (index + 1) % playlist.length;
+                document.getElementById('previewImg').src = playlist[index].url;
+                document.getElementById('previewLabel').innerText = `${playlist[index].filename} — ${playlist[index].duration}s`;
+            }, playlist[0].duration * 1000);
         }
 
         loadMedia();
         loadDevices();
+        setInterval(loadDevices, 30000);
     </script>
 </body>
 </html>
@@ -128,56 +166,70 @@ def status():
 @app.route('/device/register', methods=['POST'])
 def register_device():
     data = request.json
-    with open(DEVICES_FILE, 'r') as f:
-        devices = json.load(f)
-    devices[data['id']] = {'name': data['name'], 'category': data['category']}
-    with open(DEVICES_FILE, 'w') as f:
-        json.dump(devices, f)
+    supabase.table('devices').upsert({
+        'id': data['id'],
+        'name': data['name'],
+        'category': data['category']
+    }).execute()
     return jsonify({"status": "registered"})
 
 @app.route('/devices')
 def get_devices():
-    with open(DEVICES_FILE, 'r') as f:
-        return jsonify(json.load(f))
+    devices = supabase.table('devices').select('*').execute().data
+    heartbeats = supabase.table('heartbeats').select('*').execute().data
+    hb_map = {h['device_id']: h['last_seen'] for h in heartbeats}
+    now = datetime.now(timezone.utc)
+    for device in devices:
+        last = hb_map.get(device['id'])
+        if last:
+            last_seen = datetime.fromisoformat(last)
+            if last_seen.tzinfo is None:
+                last_seen = last_seen.replace(tzinfo=timezone.utc)
+            diff = (now - last_seen).total_seconds()
+            device['online'] = diff < 600
+            device['last_seen'] = last
+        else:
+            device['online'] = False
+            device['last_seen'] = None
+    return jsonify(devices)
+
+@app.route('/heartbeat/<device_id>', methods=['POST'])
+def heartbeat(device_id):
+    now = datetime.now(timezone.utc).isoformat()
+    supabase.table('heartbeats').upsert({
+        'device_id': device_id,
+        'last_seen': now
+    }).execute()
+    return jsonify({"status": "ok"})
 
 @app.route('/media/upload', methods=['POST'])
 def upload_media():
     file = request.files['file']
     category = request.form.get('category', 'general')
     duration = request.form.get('duration', 10)
+    result = cloudinary.uploader.upload(file, resource_type='auto')
+    url = result['secure_url']
     filename = file.filename
-    file.save(os.path.join(MEDIA_FOLDER, filename))
-    with open(PLAYLIST_FILE, 'r') as f:
-        playlists = json.load(f)
-    if 'library' not in playlists:
-        playlists['library'] = []
-    playlists['library'].append({'filename': filename, 'category': category, 'duration': int(duration)})
-    with open(PLAYLIST_FILE, 'w') as f:
-        json.dump(playlists, f)
+    supabase.table('media_library').insert({
+        'filename': filename,
+        'category': category,
+        'duration': int(duration),
+        'url': url
+    }).execute()
     return jsonify({"status": "uploaded"})
 
 @app.route('/media/list')
 def list_media():
-    with open(PLAYLIST_FILE, 'r') as f:
-        playlists = json.load(f)
-    return jsonify(playlists.get('library', []))
-
-@app.route('/media/<filename>')
-def serve_media(filename):
-    return send_from_directory(MEDIA_FOLDER, filename)
+    media = supabase.table('media_library').select('*').execute().data
+    return jsonify(media)
 
 @app.route('/playlist/<device_id>')
 def get_playlist(device_id):
-    with open(DEVICES_FILE, 'r') as f:
-        devices = json.load(f)
-    with open(PLAYLIST_FILE, 'r') as f:
-        playlists = json.load(f)
-    device = devices.get(device_id, {})
-    device_category = device.get('category', '')
-    library = playlists.get('library', [])
-    filtered = [item for item in library if item.get('category') != device_category]
+    devices = supabase.table('devices').select('*').eq('id', device_id).execute().data
+    device_category = devices[0]['category'] if devices else ''
+    media = supabase.table('media_library').select('*').execute().data
+    filtered = [m for m in media if m.get('category') != device_category]
     return jsonify(filtered)
 
 if __name__ == '__main__':
     app.run(debug=True)
-
