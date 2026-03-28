@@ -116,18 +116,41 @@ DASHBOARD_HTML = '''
         }
 
         async function loadDevices() {
-            const r = await fetch('/devices');
-            const data = await r.json();
-            const div = document.getElementById('deviceList');
-            if (data.length === 0) { div.innerHTML = 'No devices registered yet.'; return; }
-            div.innerHTML = '<table><tr><th>ID</th><th>Name</th><th>Category</th><th>Status</th><th>Last Seen</th></tr>' +
-                data.map(d => {
-                    const status = d.online ? '<span class="online">🟢 Online</span>' : '<span class="offline">🔴 Offline</span>';
-                    const lastSeen = d.last_seen ? new Date(d.last_seen).toLocaleString() : 'Never';
-                    return `<tr><td>${d.id}</td><td>${d.name}</td><td>${d.category}</td><td>${status}</td><td>${lastSeen}</td></tr>`;
-                }).join('') +
-                '</table>';
+ 	   const r = await fetch('/devices');
+	    const data = await r.json();
+ 	   const div = document.getElementById('deviceList');
+ 	   if (data.length === 0) { div.innerHTML = 'No devices registered yet.'; return; }
+	    div.innerHTML = '<table><tr><th>ID</th><th>Name</th><th>Category</th><th>Status</th><th>Last Seen</th><th>Action</th></tr>' +
+	        data.map(d => {
+	            const status = d.online ? '<span class="online">🟢 Online</span>' : '<span class="offline">🔴 Offline</span>';
+	            const lastSeen = d.last_seen ? new Date(d.last_seen).toLocaleString() : 'Never';
+	            return `<tr><td>${d.id}</td><td>${d.name}</td><td>${d.category}</td><td>${status}</td><td>${lastSeen}</td><td><button style="background:#e74c3c;" onclick="deleteDevice('${d.id}')">Delete</button></td></tr>`;
+	        }).join('') +
+	        '</table>';
+}
+
+	async function deleteDevice(id) {
+	    if (!confirm('Are you sure you want to delete this device?')) return;
+	    await fetch(`/device/delete/${id}`, {method: 'DELETE'});
+  	 loadDevices();
+}
         }
+
+	async function loadMedia() {
+    		const r = await fetch('/media/list');
+    		const data = await r.json();
+    		const div = document.getElementById('mediaList');
+    		if (data.length === 0) { div.innerHTML = 'No media uploaded yet.'; return; }
+    		div.innerHTML = '<table><tr><th>Filename</th><th>Category</th><th>Duration</th><th>Preview</th><th>Action</th></tr>' +
+        	data.map(m => `<tr><td>${m.filename}</td><td>${m.category}</td><td>${m.duration}s</td><td><a href="${m.url}" target="_blank">View</a></td><td><button style="background:#e74c3c;" onclick="deleteMedia(${m.id})">Delete</button></td></tr>`).join('') +
+        	'</table>';
+}
+
+async function deleteMedia(id) {
+    if (!confirm('Are you sure you want to delete this media?')) return;
+    await fetch(`/media/delete/${id}`, {method: 'DELETE'});
+    loadMedia();
+}
 
         async function previewPlaylist() {
             const deviceId = document.getElementById('previewDeviceId').value;
@@ -233,3 +256,17 @@ def get_playlist(device_id):
 
 if __name__ == '__main__':
     app.run(debug=True)
+@app.route('/device/delete/<device_id>', methods=['DELETE'])
+def delete_device(device_id):
+    supabase.table('devices').delete().eq('id', device_id).execute()
+    supabase.table('heartbeats').delete().eq('device_id', device_id).execute()
+    return jsonify({"status": "deleted"})
+
+@app.route('/media/delete/<int:media_id>', methods=['DELETE'])
+def delete_media(media_id):
+    media = supabase.table('media_library').select('*').eq('id', media_id).execute().data
+    if media:
+        public_id = media[0]['url'].split('/')[-1].split('.')[0]
+        cloudinary.uploader.destroy(public_id)
+    supabase.table('media_library').delete().eq('id', media_id).execute()
+    return jsonify({"status": "deleted"})
