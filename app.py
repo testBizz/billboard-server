@@ -5,7 +5,7 @@ import cloudinary.uploader
 import os
 from supabase import create_client
 from sendgrid import SendGridAPIClient
-from sendgrid.mail import Mail
+from sendgrid.helpers.mail import Mail
 import threading
 
 app = Flask(__name__)
