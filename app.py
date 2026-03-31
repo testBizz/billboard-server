@@ -4,6 +4,9 @@ import cloudinary
 import cloudinary.uploader
 import os
 from supabase import create_client
+from sendgrid import SendGridAPIClient
+from sendgrid.mail import Mail
+import threading
 
 app = Flask(__name__)
 
@@ -20,6 +23,8 @@ cloudinary.config(
     api_key=CLOUDINARY_API_KEY,
     api_secret=CLOUDINARY_API_SECRET
 )
+
+
 
 @app.route('/')
 def dashboard():
