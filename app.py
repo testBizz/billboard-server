@@ -7,6 +7,7 @@ from supabase import create_client
 from sendgrid import SendGridAPIClient
 from sendgrid.helpers.mail import Mail
 import threading
+import time
 
 app = Flask(__name__)
 
@@ -23,6 +24,20 @@ cloudinary.config(
     api_key=CLOUDINARY_API_KEY,
     api_secret=CLOUDINARY_API_SECRET
 )
+
+def send_offline_alert(device_id, device_name):
+    try:
+        sg = SendGridAPIClient(os.environ.get('SENDGRID_API_KEY'))
+        message = Mail(
+            from_email=os.environ.get('ALERT_EMAIL'),
+            to_emails=os.environ.get('ALERT_EMAIL'),
+            subject=f'Billboard Alert: {device_name} is offline',
+            html_content=f'<h2>Device Offline Alert</h2><p>Device <strong>{device_name}</strong> ({device_id}) has not sent a heartbeat in over 10 minutes.</p><p>Please check the device at the business location.</p>'
+        )
+        sg.send(message)
+        print(f"Alert sent for {device_id}")
+    except Exception as e:
+        print(f"Failed to send alert: {e}")
 
 def monitor_devices():
     print("Monitor thread started")
@@ -149,6 +164,9 @@ def get_playlist(device_id):
     media = supabase.table('media_library').select('*').execute().data
     filtered = [m for m in media if m.get('category') != device_category]
     return jsonify(filtered)
+
+monitor_thread = threading.Thread(target=monitor_devices, daemon=True)
+monitor_thread.start()
 
 if __name__ == '__main__':
     app.run(debug=True)
