@@ -24,7 +24,36 @@ cloudinary.config(
     api_secret=CLOUDINARY_API_SECRET
 )
 
-
+def monitor_devices():
+    print("Monitor thread started")
+    alerted = set()
+    while True:
+        try:
+            print("Monitor checking devices...")
+            devices = supabase.table('devices').select('*').execute().data
+            heartbeats = supabase.table('heartbeats').select('*').execute().data
+            hb_map = {h['device_id']: h['last_seen'] for h in heartbeats}
+            now = datetime.now(timezone.utc)
+            for device in devices:
+                device_id = device['id']
+                last = hb_map.get(device_id)
+                if last:
+                    last_seen = datetime.fromisoformat(last)
+                    if last_seen.tzinfo is None:
+                        last_seen = last_seen.replace(tzinfo=timezone.utc)
+                    diff = (now - last_seen).total_seconds()
+                    print(f"Device {device_id}: last seen {int(diff)}s ago")
+                    if diff > 600 and device_id not in alerted:
+                        print(f"Device {device_id} is offline, sending alert...")
+                        send_offline_alert(device_id, device.get('name', device_id))
+                        alerted.add(device_id)
+                    elif diff <= 600 and device_id in alerted:
+                        alerted.discard(device_id)
+                else:
+                    print(f"Device {device_id}: no heartbeat on record")
+        except Exception as e:
+            print(f"Monitor error: {e}")
+        time.sleep(60)
 
 @app.route('/')
 def dashboard():
