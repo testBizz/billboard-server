@@ -1,8 +1,7 @@
-<!DOCTYPE html>
+1<!DOCTYPE html>
 <html>
 <head>
-    <title>Lightbulb. Admin</title>
-    <link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
+    <title>Billboard Admin</title>
     <style>
         body { font-family: Arial, sans-serif; max-width: 900px; margin: 40px auto; padding: 20px; }
         h1 { color: #333; }
@@ -15,31 +14,17 @@
         .online { color: green; font-weight: bold; }
         .offline { color: red; font-weight: bold; }
         .btn-delete { background: #e74c3c; }
-        .brand { display: flex; align-items: center; gap: 16px; margin-bottom: 30px; border-bottom: 2px solid #eee; padding-bottom: 20px; }
-        .brand-title { font-family: 'DM Mono', monospace; font-size: 32px; font-weight: 500; color: #1a1a1a; letter-spacing: -1px; }
-        .brand svg { width: 60px; height: auto; }
     </style>
 </head>
 <body>
-
-    <div class="brand">
-        <svg width="101.80663mm" height="66.231247mm" viewBox="0 0 101.80663 66.231248" version="1.1" xmlns="http://www.w3.org/2000/svg">
-          <g transform="translate(-30.093301,-123.58721)">
-            <path style="fill:none;stroke:#000000;stroke-width:1.32291667;" d="M 33.236355,173.40068 A 47.456882,47.456882 0 0 1 80.693237,125.9438 47.456882,47.456882 0 0 1 128.15012,173.40068"/>
-            <rect style="fill:none;stroke:#000000;stroke-width:1.32291667;" width="13.796124" height="13.796124" x="54.216003" y="157.64072"/>
-            <rect style="fill:none;stroke:#000000;stroke-width:1.32291667;" width="13.796124" height="13.796124" x="93.374352" y="157.64072"/>
-            <path style="fill:none;stroke:#000000;stroke-width:1.32291667;" d="m 68.154467,187.5815 -3e-6,-16.20147 v 0 h 25.171283 v 16.20146"/>
-          </g>
-        </svg>
-        <span class="brand-title">Lightbulb.</span>
-    </div>
+    <h1>Billboard Admin Dashboard</h1>
 
     <section>
         <h2>Register Device</h2>
         <input id="deviceId" placeholder="Device ID (e.g. device_001)" />
         <input id="deviceName" placeholder="Business name" />
         <input id="deviceCategory" placeholder="Category (e.g. barber)" />
-        <input id="deviceLocation" placeholder="Location (e.g. 123 High Street, Manchester)" />
+	<input id="deviceLocation" placeholder="Location
         <button onclick="registerDevice()">Register</button>
     </section>
 
@@ -71,19 +56,20 @@
     </section>
 
     <script>
-        async function registerDevice() {
-            const id = document.getElementById('deviceId').value;
-            const name = document.getElementById('deviceName').value;
-            const category = document.getElementById('deviceCategory').value;
-            const location = document.getElementById('deviceLocation').value;
-            await fetch('/device/register', {
-                method: 'POST',
-                headers: {'Content-Type': 'application/json'},
-                body: JSON.stringify({id, name, category, location})
-            });
-            alert('Device registered!');
-            loadDevices();
-        }
+        
+async function registerDevice() {
+    const id = document.getElementById('deviceId').value;
+    const name = document.getElementById('deviceName').value;
+    const category = document.getElementById('deviceCategory').value;
+    const location = document.getElementById('deviceLocation').value;
+    await fetch('/device/register', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({id, name, category, location})
+    });
+    alert('Device registered!');
+    loadDevices();
+}
 
         async function uploadMedia() {
             const file = document.getElementById('mediaFile').files[0];
@@ -130,12 +116,11 @@
                 div.innerHTML = 'No devices registered yet.';
                 return;
             }
-            let rows = '<table><tr><th>ID</th><th>Name</th><th>Category</th><th>Location</th><th>Status</th><th>Last Seen</th><th>Action</th></tr>';
+            let rows = '<table><tr><th>ID</th><th>Name</th><th>Category</throws += '<tr><td>' + d.id + '</td><td>' + d.name + '</td><td>' + d.category + '</td><td>' + (d.location || '-') + '</td><td>' + status + '</td><td>' + lastSeen + '</td><td><button class="btn-delete" onclick="deleteDevice(\'' + d.id + '\')">Delete</button></td></tr>';<th>Status</th><th>Last Seen</th><th>Action</th></tr>';
             data.forEach(function(d) {
                 var status = d.online ? '<span class="online">Online</span>' : '<span class="offline">Offline</span>';
                 var lastSeen = d.last_seen ? new Date(d.last_seen).toLocaleString() : 'Never';
-                rows += '<tr><td>' + d.id + '</td><td>' + d.name + '</td><td>' + d.category + '</td>';
-                rows += '<td>' + (d.location || '-') + '</td>';
+                rows += '<tr><td>' + d.id + '</td><td>' + d.name + '</td><td>' + d.category + '</td>'+ (d.location ;
                 rows += '<td>' + status + '</td><td>' + lastSeen + '</td>';
                 rows += '<td><button class="btn-delete" onclick="deleteDevice(\'' + d.id + '\')">Delete</button></td></tr>';
             });
@@ -173,4 +158,3 @@
     </script>
 </body>
 </html>
-	
